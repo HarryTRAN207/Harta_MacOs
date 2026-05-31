@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QLabel, QWidget, QPushButton, QFileDialog, QMessageBox
+from PyQt5.QtWidgets import QLabel, QWidget, QPushButton, QFileDialog, QMessageBox, QSlider, QSpinBox
 from PyQt5.QtGui import QBrush, QPen, QPainter, QImage, QPixmap, QColor
 from PyQt5.QtCore import Qt, QRect
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -668,58 +668,173 @@ class SecondWindow(QWidget):
         self.slice_edit = slice_edit
         self.patient_edit = patient_edit
         self.eventhandler = EventHandler(self)
+        self._orig = cv.imread(
+            f"aux_img/slices/{patient_edit}_{slice_edit}.png",
+            cv.IMREAD_GRAYSCALE
+        )
+        self._wl_center = 128
+        self._wl_width  = 256
         self.setupUi()
+
+    # ── Windowing helpers ────────────────────────────────────────────────────
+
+    def _applyWindowing(self):
+        lo = max(self._wl_center - self._wl_width // 2, 0)
+        hi = min(self._wl_center + self._wl_width // 2, 255)
+        if hi <= lo:
+            hi = lo + 1
+        scale = 255.0 / (hi - lo)
+        win = np.clip((self._orig.astype(np.float32) - lo) * scale, 0, 255).astype(np.uint8)
+        rgb = cv.cvtColor(win, cv.COLOR_GRAY2RGB)
+        h, w, ch = rgb.shape
+        qimg = QImage(rgb.tobytes(), w, h, ch * w, QImage.Format_RGB888)
+        self.img.setPixmap(QPixmap.fromImage(qimg))
+        self.img.update()
+
+    def _onCenterChanged(self, v):
+        self._wl_center = v
+        self._centerSpin.blockSignals(True);  self._centerSpin.setValue(v);  self._centerSpin.blockSignals(False)
+        self._applyWindowing()
+
+    def _onCenterSpinChanged(self, v):
+        self._wl_center = v
+        self._centerSlider.blockSignals(True); self._centerSlider.setValue(v); self._centerSlider.blockSignals(False)
+        self._applyWindowing()
+
+    def _onWidthChanged(self, v):
+        self._wl_width = v
+        self._widthSpin.blockSignals(True);  self._widthSpin.setValue(v);  self._widthSpin.blockSignals(False)
+        self._applyWindowing()
+
+    def _onWidthSpinChanged(self, v):
+        self._wl_width = v
+        self._widthSlider.blockSignals(True); self._widthSlider.setValue(v); self._widthSlider.blockSignals(False)
+        self._applyWindowing()
+
+    def _applyPreset(self, center, width):
+        self._wl_center, self._wl_width = center, width
+        for w in (self._centerSlider, self._centerSpin, self._widthSlider, self._widthSpin):
+            w.blockSignals(True)
+        self._centerSlider.setValue(center); self._centerSpin.setValue(center)
+        self._widthSlider.setValue(width);   self._widthSpin.setValue(width)
+        for w in (self._centerSlider, self._centerSpin, self._widthSlider, self._widthSpin):
+            w.blockSignals(False)
+        self._applyWindowing()
+
+    # ── UI setup ─────────────────────────────────────────────────────────────
 
     def setupUi(self):
         self.setWindowTitle("Pericardium delineation")
         self.setStyleSheet("background-color:rgb(255, 255, 255);")
         self.setWindowIcon(QtGui.QIcon(':/aux/logo_w.png'))
+        self.resize(1050, 750)
+        self.setMinimumSize(QtCore.QSize(1050, 750))
 
-        self.img = self.eventhandler
-        img = cv.imread(f"aux_img/slices/{self.patient_edit}_{self.slice_edit}.png")
-        height, width, bytesPerComponent = img.shape
-        bytesPerLine = 3 * width
-        cv.cvtColor(img, cv.COLOR_BGR2RGB, img)
-        QImg = QImage(img.data, width, height, bytesPerLine, QImage.Format_RGB888)
-        pixmap = QPixmap.fromImage(QImg)
-        self.img.setPixmap(pixmap)
-
-        'Size of window'
-        self.resize(860, 920)
-
-        'Image properties'
-        self.img.setMinimumSize(QtCore.QSize(800, 800))
-        self.img.setBaseSize(QtCore.QSize(512, 512))
-        self.img.setLayoutDirection(QtCore.Qt.LeftToRight)
-        self.img.setScaledContents(True)
-        self.img.setGeometry(QRect(30, 30, width, height))
-        self.img.setCursor(Qt.CrossCursor)
-
-        'Buttons properties'
-        font = QtGui.QFont()
-        font.setPointSize(9)
         buttonStyle = """
         QPushButton{
-            border-style: solid;
-            border-width: 0px;
-            border-radius: 10px;
+            border-style: solid; border-width: 0px; border-radius: 10px;
             background-color: rgb(234,234,234);
         }
-        QPushButton::hover{
-            background-color: rgb(183,181,181);
-        }
+        QPushButton::hover{ background-color: rgb(183,181,181); }
         """
-        ' > Done '
+        presetStyle = """
+        QPushButton{
+            border-style: solid; border-width: 1px; border-color: rgb(200,200,200);
+            border-radius: 8px; background-color: rgb(245,245,245);
+        }
+        QPushButton::hover{ background-color: rgb(70,136,244); color: white; border-color: rgb(70,136,244); }
+        """
+
+        fnt9 = QtGui.QFont(); fnt9.setFamily("Roboto"); fnt9.setPointSize(9)
+        fntB = QtGui.QFont(); fntB.setFamily("Roboto"); fntB.setPointSize(10); fntB.setBold(True)
+        fntS = QtGui.QFont(); fntS.setFamily("Roboto"); fntS.setPointSize(8)
+
+        # ── Image (EventHandler) ─────────────────────────────────────────────
+        self.img = self.eventhandler
+        self._applyWindowing()
+        self.img.setGeometry(QRect(20, 65, 512, 512))
+        self.img.setMinimumSize(QtCore.QSize(512, 512))
+        self.img.setScaledContents(True)
+        self.img.setCursor(Qt.CrossCursor)
+
+        # ── Windowing panel ──────────────────────────────────────────────────
+        PX = 560   # panel x origin
+
+        panelTitle = QLabel("Windowing / Gray-level Mapping", self)
+        panelTitle.setGeometry(QRect(PX, 65, 460, 26))
+        panelTitle.setFont(fntB)
+
+        sep = QLabel(self)
+        sep.setGeometry(QRect(PX, 94, 460, 2))
+        sep.setStyleSheet("background-color: rgb(220,220,220);")
+
+        # Window Center (Level)
+        QLabel("Window Center (Level)", self).setGeometry(QRect(PX, 104, 220, 18))
+        self._centerSlider = QSlider(Qt.Horizontal, self)
+        self._centerSlider.setGeometry(QRect(PX, 126, 340, 22))
+        self._centerSlider.setRange(0, 255); self._centerSlider.setValue(128)
+        self._centerSpin = QSpinBox(self)
+        self._centerSpin.setGeometry(QRect(PX + 350, 122, 72, 30))
+        self._centerSpin.setRange(0, 255); self._centerSpin.setValue(128)
+        self._centerSpin.setFont(fnt9)
+
+        # Window Width
+        QLabel("Window Width", self).setGeometry(QRect(PX, 166, 220, 18))
+        self._widthSlider = QSlider(Qt.Horizontal, self)
+        self._widthSlider.setGeometry(QRect(PX, 188, 340, 22))
+        self._widthSlider.setRange(1, 256); self._widthSlider.setValue(256)
+        self._widthSpin = QSpinBox(self)
+        self._widthSpin.setGeometry(QRect(PX + 350, 184, 72, 30))
+        self._widthSpin.setRange(1, 256); self._widthSpin.setValue(256)
+        self._widthSpin.setFont(fnt9)
+
+        # Presets
+        presetsLbl = QLabel("Presets:", self)
+        presetsLbl.setGeometry(QRect(PX, 228, 70, 18))
+        presetsLbl.setFont(fnt9)
+
+        presets = [
+            ("Full view",     128, 256),
+            ("Soft Tissue",   128, 150),
+            ("Bone",          210,  80),
+            ("Lung",           64, 180),
+        ]
+        for i, (label, c, w) in enumerate(presets):
+            btn = QPushButton(label, self)
+            btn.setGeometry(QRect(PX + i * 110, 250, 100, 28))
+            btn.setFont(fnt9)
+            btn.setStyleSheet(presetStyle)
+            btn.clicked.connect(lambda _, c=c, w=w: self._applyPreset(c, w))
+
+        sep2 = QLabel(self)
+        sep2.setGeometry(QRect(PX, 292, 460, 2))
+        sep2.setStyleSheet("background-color: rgb(220,220,220);")
+
+        instrLbl = QLabel(
+            "Click on the image to place points\n"
+            "and delineate the pericardium boundary.\n\n"
+            "Adjust windowing to improve visibility\n"
+            "of structures before drawing.", self)
+        instrLbl.setGeometry(QRect(PX, 302, 440, 90))
+        instrLbl.setFont(fntS)
+        instrLbl.setStyleSheet("color: rgb(120,120,120);")
+
+        # Connect sliders ↔ spinboxes
+        self._centerSlider.valueChanged.connect(self._onCenterChanged)
+        self._centerSpin.valueChanged.connect(self._onCenterSpinChanged)
+        self._widthSlider.valueChanged.connect(self._onWidthChanged)
+        self._widthSpin.valueChanged.connect(self._onWidthSpinChanged)
+
+        # ── Done / Cancel ────────────────────────────────────────────────────
         self.doneButton = QPushButton('Done', self)
-        self.doneButton.setGeometry(QRect(624, 860, 93, 28))
-        self.doneButton.setFont(font)
+        self.doneButton.setGeometry(QRect(820, 700, 100, 32))
+        self.doneButton.setFont(fnt9)
         self.doneButton.setStyleSheet(buttonStyle)
         self.doneButton.clicked.connect(self.onSubmit)
 
-        ' > Cancel '
         self.cancelButton = QPushButton('Cancel', self)
-        self.cancelButton.setGeometry(QRect(737, 860, 93, 28))
-        self.cancelButton.setFont(font)
+        self.cancelButton.setGeometry(QRect(930, 700, 100, 32))
+        self.cancelButton.setFont(fnt9)
         self.cancelButton.setStyleSheet(buttonStyle)
         self.cancelButton.clicked.connect(lambda: self.close())
 
