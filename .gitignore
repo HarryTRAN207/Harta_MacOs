@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+*.pyo
+aux_img/combined/*
+aux_img/slices/*
+aux_img/contours/*
+aux_img/fat/*
+*.zip
+.DS_Store

@@ -459,14 +459,21 @@ class Ui_MainWindow(object):
 
     def closeProgram(self):
         self.cleanAll()
-        MainWindow.close()
+        QtWidgets.QApplication.quit()
 
     def cleanAll(self):
-        dir = 'aux_img'
-        for f in os.listdir(dir):
-            subdir = f'{dir}/{f}'
+        base = 'aux_img'
+        if not os.path.isdir(base):
+            return
+        for f in os.listdir(base):
+            subdir = os.path.join(base, f)
+            if not os.path.isdir(subdir):
+                continue
             for subf in os.listdir(subdir):
-                os.remove(os.path.join(subdir, subf))
+                try:
+                    os.remove(os.path.join(subdir, subf))
+                except OSError:
+                    pass
 
     def closeEvent(self, event):
         msgBox = QMessageBox()
@@ -808,8 +815,37 @@ class EventHandler(QLabel):
         self.flag = True
 
 
+def _safe_excepthook(exc_type, exc_value, exc_tb):
+    import traceback
+    msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+    print(msg, file=sys.stderr)
+    box = QMessageBox()
+    box.setWindowTitle("Error")
+    box.setText(f"{exc_type.__name__}: {exc_value}")
+    box.setDetailedText(msg)
+    box.exec_()
+
 if __name__ == "__main__":
+    # Ensure required directories exist
+    for d in ['aux_img/combined', 'aux_img/slices', 'aux_img/contours', 'aux_img/fat']:
+        os.makedirs(d, exist_ok=True)
+
+    sys.excepthook = _safe_excepthook
+
     app = QtWidgets.QApplication(sys.argv)
+
+    # Prevent PyQt5 5.15 from calling abort() on unhandled slot exceptions
+    import traceback
+    def _qt_exception_hook(exc_type, exc_value, exc_tb):
+        msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_tb))
+        print(msg, file=sys.stderr)
+        box = QMessageBox()
+        box.setWindowTitle("Error")
+        box.setText(f"{exc_type.__name__}: {exc_value}")
+        box.setDetailedText(msg)
+        box.exec_()
+    sys.excepthook = _qt_exception_hook
+
     MainWindow = QtWidgets.QMainWindow()
     ui = Ui_MainWindow()
     ui.setupUi(MainWindow)
