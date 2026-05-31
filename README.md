@@ -11,6 +11,16 @@ Feel free to contact the original author: afo.rebelo@campus.fct.unl.pt
 
 ---
 
+## Screenshots
+
+**Main window — Slice slider navigation**
+![Slice slider](Screenshots/6_Slice_slider.png)
+
+**Edit Slice window — Windowing / Gray-level Mapping panel**
+![Windowing panel](Screenshots/7_Windowing_panel.png)
+
+---
+
 ## macOS Port — What's New
 
 This fork ports HARTA to **macOS (Apple Silicon & Intel)** and adds several usability improvements over the original Windows-only release.
