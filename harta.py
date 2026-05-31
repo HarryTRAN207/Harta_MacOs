@@ -284,7 +284,7 @@ class Ui_MainWindow(object):
         self.volume.setObjectName("volume")
         self.slicesManager = QtWidgets.QGroupBox(self.centralwidget)
         self.slicesManager.setEnabled(False)
-        self.slicesManager.setGeometry(QtCore.QRect(30, 550, 521, 101))
+        self.slicesManager.setGeometry(QtCore.QRect(30, 540, 521, 130))
         self.slicesManager.setStyleSheet(boxStyle)
         self.slicesManager.setTitle("")
         self.slicesManager.setObjectName("slicesManager")
@@ -336,8 +336,15 @@ class Ui_MainWindow(object):
         self.next.setFont(font)
         self.next.setStyleSheet(buttonStyle)
         self.next.setObjectName("next")
+        self.sliceSlider = QtWidgets.QSlider(QtCore.Qt.Horizontal, self.slicesManager)
+        self.sliceSlider.setGeometry(QtCore.QRect(10, 50, 501, 22))
+        self.sliceSlider.setMinimum(1)
+        self.sliceSlider.setMaximum(1)
+        self.sliceSlider.setValue(1)
+        self.sliceSlider.setTickPosition(QtWidgets.QSlider.NoTicks)
+        self.sliceSlider.setObjectName("sliceSlider")
         self.edit_slice = QtWidgets.QPushButton(self.slicesManager)
-        self.edit_slice.setGeometry(QtCore.QRect(180, 60, 161, 31))
+        self.edit_slice.setGeometry(QtCore.QRect(180, 90, 161, 31))
         font = QtGui.QFont()
         font.setFamily("Roboto")
         font.setPointSize(9)
@@ -540,6 +547,8 @@ class Ui_MainWindow(object):
         'Show the number of slices and the first slice'
         self.total_slices.setText(str(no_slices - 1))
         self.actual_slice.setText(str(1))
+        self.sliceSlider.setMaximum(no_slices - 1)
+        self.sliceSlider.setValue(1)
         'Show image of slice 0'
         self.imageHeart.setPixmap(QtGui.QPixmap(f"aux_img/combined/{patient_id}_{0}_combined.png"))
 
@@ -553,18 +562,24 @@ class Ui_MainWindow(object):
 
     def nextSlice(self):
         current = int(self.getCurrentSlice())
-        if current < no_slices - 1:
-            self.actual_slice.setText(str(current + 1))
-        else:
-            self.actual_slice.setText(str(no_slices - 1))
+        new = min(current + 1, no_slices - 1)
+        self.actual_slice.setText(str(new))
+        self.sliceSlider.blockSignals(True)
+        self.sliceSlider.setValue(new)
+        self.sliceSlider.blockSignals(False)
         self.displaySlice()
 
     def previousSlice(self):
         current = int(self.getCurrentSlice())
-        if current > 1:
-            self.actual_slice.setText(str(current - 1))
-        else:
-            self.actual_slice.setText(str(1))
+        new = max(current - 1, 1)
+        self.actual_slice.setText(str(new))
+        self.sliceSlider.blockSignals(True)
+        self.sliceSlider.setValue(new)
+        self.sliceSlider.blockSignals(False)
+        self.displaySlice()
+
+    def sliderChanged(self, value):
+        self.actual_slice.setText(str(value))
         self.displaySlice()
 
     def editionHandler(self):
@@ -632,6 +647,9 @@ class Ui_MainWindow(object):
         'Button to go to next and previous slice'
         self.next.clicked.connect(self.nextSlice)
         self.previous.clicked.connect(self.previousSlice)
+
+        'Slider to navigate slices'
+        self.sliceSlider.valueChanged.connect(self.sliderChanged)
 
         'Button to close the program'
         self.closeButton.clicked.connect(self.closeProgram)
