@@ -721,6 +721,21 @@ class SecondWindow(QWidget):
             w.blockSignals(False)
         self._applyWindowing()
 
+    def _setMode(self, mode):
+        self.eventhandler.setMode(mode)
+        activeStyle   = ("QPushButton { border-radius:8px; background-color:rgb(70,136,244); "
+                         "color:white; border:none; } QPushButton:hover { background-color:rgb(18,77,150); }")
+        inactiveStyle = ("QPushButton { border-radius:8px; background-color:rgb(234,234,234); "
+                         "color:black; border:none; } QPushButton:hover { background-color:rgb(183,181,181); }")
+        if mode == 'window':
+            self._btnModeWindow.setStyleSheet(activeStyle)
+            self._btnModeDraw.setStyleSheet(inactiveStyle)
+            self._dragHint.show()
+        else:
+            self._btnModeDraw.setStyleSheet(activeStyle)
+            self._btnModeWindow.setStyleSheet(inactiveStyle)
+            self._dragHint.hide()
+
     # ── UI setup ─────────────────────────────────────────────────────────────
 
     def setupUi(self):
@@ -757,65 +772,100 @@ class SecondWindow(QWidget):
         self.img.setScaledContents(True)
         self.img.setCursor(Qt.CrossCursor)
 
-        # ── Windowing panel ──────────────────────────────────────────────────
+        # ── Mode selector ────────────────────────────────────────────────────
         PX = 560   # panel x origin
 
+        modeActiveStyle = ("QPushButton { border-radius:8px; "
+                           "background-color:rgb(70,136,244); color:white; border:none; }"
+                           "QPushButton:hover { background-color:rgb(18,77,150); }")
+        modeInactiveStyle = ("QPushButton { border-radius:8px; "
+                             "background-color:rgb(234,234,234); color:black; border:none; }"
+                             "QPushButton:hover { background-color:rgb(183,181,181); }")
+
+        modeLbl = QLabel("Mode:", self)
+        modeLbl.setGeometry(QRect(PX, 70, 50, 26))
+        modeLbl.setFont(fnt9)
+
+        self._btnModeDraw = QPushButton("✏  Draw ROI", self)
+        self._btnModeDraw.setGeometry(QRect(PX + 55, 65, 130, 30))
+        self._btnModeDraw.setFont(fnt9)
+        self._btnModeDraw.setStyleSheet(modeActiveStyle)
+        self._btnModeDraw.clicked.connect(lambda: self._setMode('draw'))
+
+        self._btnModeWindow = QPushButton("🖱  Windowing", self)
+        self._btnModeWindow.setGeometry(QRect(PX + 195, 65, 138, 30))
+        self._btnModeWindow.setFont(fnt9)
+        self._btnModeWindow.setStyleSheet(modeInactiveStyle)
+        self._btnModeWindow.clicked.connect(lambda: self._setMode('window'))
+
+        self._dragHint = QLabel("Drag on image:  ←→ Width   ↑↓ Center", self)
+        self._dragHint.setGeometry(QRect(PX + 55, 99, 350, 16))
+        self._dragHint.setFont(fntS)
+        self._dragHint.setStyleSheet("color: rgb(100,140,220);")
+        self._dragHint.hide()
+
+        sep0 = QLabel(self)
+        sep0.setGeometry(QRect(PX, 122, 460, 2))
+        sep0.setStyleSheet("background-color: rgb(220,220,220);")
+
+        # ── Windowing controls ───────────────────────────────────────────────
         panelTitle = QLabel("Windowing / Gray-level Mapping", self)
-        panelTitle.setGeometry(QRect(PX, 65, 460, 26))
+        panelTitle.setGeometry(QRect(PX, 132, 460, 26))
         panelTitle.setFont(fntB)
 
         sep = QLabel(self)
-        sep.setGeometry(QRect(PX, 94, 460, 2))
+        sep.setGeometry(QRect(PX, 161, 460, 2))
         sep.setStyleSheet("background-color: rgb(220,220,220);")
 
         # Window Center (Level)
-        QLabel("Window Center (Level)", self).setGeometry(QRect(PX, 104, 220, 18))
+        QLabel("Window Center (Level)", self).setGeometry(QRect(PX, 171, 220, 18))
         self._centerSlider = QSlider(Qt.Horizontal, self)
-        self._centerSlider.setGeometry(QRect(PX, 126, 340, 22))
+        self._centerSlider.setGeometry(QRect(PX, 193, 340, 22))
         self._centerSlider.setRange(0, 255); self._centerSlider.setValue(128)
         self._centerSpin = QSpinBox(self)
-        self._centerSpin.setGeometry(QRect(PX + 350, 122, 72, 30))
+        self._centerSpin.setGeometry(QRect(PX + 350, 189, 72, 30))
         self._centerSpin.setRange(0, 255); self._centerSpin.setValue(128)
         self._centerSpin.setFont(fnt9)
 
         # Window Width
-        QLabel("Window Width", self).setGeometry(QRect(PX, 166, 220, 18))
+        QLabel("Window Width", self).setGeometry(QRect(PX, 233, 220, 18))
         self._widthSlider = QSlider(Qt.Horizontal, self)
-        self._widthSlider.setGeometry(QRect(PX, 188, 340, 22))
+        self._widthSlider.setGeometry(QRect(PX, 255, 340, 22))
         self._widthSlider.setRange(1, 256); self._widthSlider.setValue(256)
         self._widthSpin = QSpinBox(self)
-        self._widthSpin.setGeometry(QRect(PX + 350, 184, 72, 30))
+        self._widthSpin.setGeometry(QRect(PX + 350, 251, 72, 30))
         self._widthSpin.setRange(1, 256); self._widthSpin.setValue(256)
         self._widthSpin.setFont(fnt9)
 
         # Presets
         presetsLbl = QLabel("Presets:", self)
-        presetsLbl.setGeometry(QRect(PX, 228, 70, 18))
+        presetsLbl.setGeometry(QRect(PX, 295, 70, 18))
         presetsLbl.setFont(fnt9)
 
         presets = [
-            ("Full view",     128, 256),
-            ("Soft Tissue",   128, 150),
-            ("Bone",          210,  80),
-            ("Lung",           64, 180),
+            ("Full view",   128, 256),
+            ("Soft Tissue", 128, 150),
+            ("Bone",        210,  80),
+            ("Lung",         64, 180),
         ]
         for i, (label, c, w) in enumerate(presets):
             btn = QPushButton(label, self)
-            btn.setGeometry(QRect(PX + i * 110, 250, 100, 28))
+            btn.setGeometry(QRect(PX + i * 110, 317, 100, 28))
             btn.setFont(fnt9)
             btn.setStyleSheet(presetStyle)
             btn.clicked.connect(lambda _, c=c, w=w: self._applyPreset(c, w))
 
         sep2 = QLabel(self)
-        sep2.setGeometry(QRect(PX, 292, 460, 2))
+        sep2.setGeometry(QRect(PX, 358, 460, 2))
         sep2.setStyleSheet("background-color: rgb(220,220,220);")
 
         instrLbl = QLabel(
-            "Click on the image to place points\n"
-            "and delineate the pericardium boundary.\n\n"
-            "Adjust windowing to improve visibility\n"
-            "of structures before drawing.", self)
-        instrLbl.setGeometry(QRect(PX, 302, 440, 90))
+            "✏  Draw ROI: click on image to place points\n"
+            "     and delineate the pericardium boundary.\n\n"
+            "🖱  Windowing: click and drag on image\n"
+            "     ← →  adjusts Window Width\n"
+            "     ↑ ↓   adjusts Window Center", self)
+        instrLbl.setGeometry(QRect(PX, 368, 440, 110))
         instrLbl.setFont(fntS)
         instrLbl.setStyleSheet("color: rgb(120,120,120);")
 
@@ -883,62 +933,89 @@ class SecondWindow(QWidget):
 
 
 class EventHandler(QLabel):
-    flag = True
-    points = []
-    path = QtGui.QPainterPath()
+    """Image canvas supporting two interaction modes:
+       'draw'   – click to place ROI contour points (default)
+       'window' – click-drag to adjust windowing (dx→Width, dy→Center)
+    """
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.flag   = True
+        self.points = []
+        self.path   = QtGui.QPainterPath()
+        self._mode        = 'draw'
+        self._drag_start  = None
+        self._drag_center = 128
+        self._drag_width  = 256
+
+    def setMode(self, mode):
+        self._mode = mode
+        self.setCursor(Qt.CrossCursor if mode == 'draw' else Qt.SizeAllCursor)
+
+    # ── Mouse events ────────────────────────────────────────────────────────
 
     def mousePressEvent(self, event):
-        self.points.append(event.pos())
-        self.update()
+        if self._mode == 'draw':
+            self.points.append(event.pos())
+            self.update()
+        else:                               # windowing mode
+            self._drag_start  = event.pos()
+            sw = self.parent()
+            if hasattr(sw, '_wl_center'):
+                self._drag_center = sw._wl_center
+                self._drag_width  = sw._wl_width
+
+    def mouseMoveEvent(self, event):
+        if self._mode == 'window' and self._drag_start is not None:
+            dx = event.pos().x() - self._drag_start.x()
+            dy = event.pos().y() - self._drag_start.y()
+            new_center = max(0,   min(255, int(self._drag_center - dy)))
+            new_width  = max(1,   min(256, int(self._drag_width  + dx)))
+            sw = self.parent()
+            if hasattr(sw, '_applyPreset'):
+                sw._applyPreset(new_center, new_width)
+
+    def mouseReleaseEvent(self, event):
+        self._drag_start = None
+
+    # ── Paint ───────────────────────────────────────────────────────────────
 
     def paintEvent(self, event):
         super().paintEvent(event)
         if self.flag:
             self.points = []
-            self.path = QtGui.QPainterPath()
-            self.flag = False
+            self.path   = QtGui.QPainterPath()
+            self.flag   = False
         painter = QPainter(self)
-        'Pen of the points'
         painter.setPen(QPen(QColor(224, 9, 22), 10, Qt.SolidLine))
-        'Draw all points'
         for pos in self.points:
             painter.drawPoint(pos)
-        'Build the path'
         if len(self.points) > 2:
             self.buildPath()
-            'Pen of the line'
             painter.setPen(QPen(QColor(70, 136, 244), 3, Qt.SolidLine))
-            # Draw path
             painter.drawPath(self.path)
 
-    'PATH HANDLER'
+    # ── Path handler ────────────────────────────────────────────────────────
+
     def buildPath(self):
         factor = 0.5
         self.path = QtGui.QPainterPath(self.points[0])
         for p, current in enumerate(self.points[1:-1], 1):
-            'Previous segment'
-            source = QtCore.QLineF(self.points[p - 1], current)
-            'Next segment'
-            target = QtCore.QLineF(current, self.points[p + 1])
+            source      = QtCore.QLineF(self.points[p - 1], current)
+            target      = QtCore.QLineF(current, self.points[p + 1])
             targetAngle = target.angleTo(source)
             if targetAngle > 180:
                 angle = (source.angle() + source.angleTo(target) / 2) % 360
             else:
                 angle = (target.angle() + target.angleTo(source) / 2) % 360
-
             revTarget = QtCore.QLineF.fromPolar(source.length() * factor, angle + 180).translated(current)
             cp2 = revTarget.p2()
-
             if p == 1:
                 self.path.quadTo(cp2, current)
             else:
-                'Use the control point "cp1" set in the * previous * cycle'
                 self.path.cubicTo(cp1, cp2, current)
-
             revSource = QtCore.QLineF.fromPolar(target.length() * factor, angle).translated(current)
             cp1 = revSource.p2()
-
-        'The final curve, that joins to the last point'
         self.path.quadTo(cp1, self.points[-1])
 
     def getPath(self):
