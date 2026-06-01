@@ -1,4 +1,7 @@
-from PyQt5.QtWidgets import QLabel, QWidget, QPushButton, QFileDialog, QMessageBox, QSlider, QSpinBox
+from PyQt5.QtWidgets import (
+    QLabel, QWidget, QPushButton, QFileDialog, QMessageBox,
+    QSlider, QSpinBox, QInputDialog
+)
 from PyQt5.QtGui import QBrush, QPen, QPainter, QImage, QPixmap, QColor
 from PyQt5.QtCore import Qt, QRect
 from PyQt5 import QtCore, QtGui, QtWidgets
@@ -13,6 +16,61 @@ import _semiautomatic_
 import resources
 
 global flag
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Scroll-to-Edit label: wheel scrolls through slices, double-click opens editor
+# ──────────────────────────────────────────────────────────────────────────────
+class ClickableLabel(QLabel):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._nav = None
+
+    def setNavigator(self, nav):
+        self._nav = nav
+
+    def wheelEvent(self, event):
+        if self._nav and self._nav.slicesManager.isEnabled():
+            if event.angleDelta().y() > 0:
+                self._nav.previousSlice()
+            else:
+                self._nav.nextSlice()
+            event.accept()
+        else:
+            super().wheelEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        if self._nav and self._nav.slicesManager.isEnabled():
+            self._nav.openWindow()
+        else:
+            super().mouseDoubleClickEvent(event)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Main window with hotkey support (←→ navigate, E = edit)
+# ──────────────────────────────────────────────────────────────────────────────
+class MainWindowClass(QtWidgets.QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self._ui = None
+
+    def setUi(self, ui):
+        self._ui = ui
+
+    def keyPressEvent(self, event):
+        ui = self._ui
+        if ui and ui.slicesManager.isEnabled():
+            key = event.key()
+            if key in (Qt.Key_Right, Qt.Key_Down):
+                ui.nextSlice()
+                return
+            elif key in (Qt.Key_Left, Qt.Key_Up):
+                ui.previousSlice()
+                return
+            elif key == Qt.Key_E:
+                ui.openWindow()
+                return
+        super().keyPressEvent(event)
 
 
 class Ui_MainWindow(object):
@@ -122,7 +180,9 @@ class Ui_MainWindow(object):
         self.openFile.setFont(font)
         self.openFile.setStyleSheet(buttonStyle)
         self.openFile.setObjectName("openFile")
-        self.imageHeart = QtWidgets.QLabel(self.centralwidget)
+
+        # ── Slice image (ClickableLabel for scroll + double-click) ────────────
+        self.imageHeart = ClickableLabel(self.centralwidget)
         self.imageHeart.setEnabled(True)
         self.imageHeart.setGeometry(QtCore.QRect(30, 20, 520, 520))
         self.imageHeart.setText("")
@@ -130,6 +190,7 @@ class Ui_MainWindow(object):
         self.imageHeart.setScaledContents(True)
         self.imageHeart.setAlignment(QtCore.Qt.AlignCenter)
         self.imageHeart.setObjectName("imageHeart")
+
         self.manual_intervention = QtWidgets.QGroupBox(self.centralwidget)
         self.manual_intervention.setEnabled(True)
         self.manual_intervention.setGeometry(QtCore.QRect(590, 320, 591, 211))
@@ -654,6 +715,9 @@ class Ui_MainWindow(object):
         'Button to close the program'
         self.closeButton.clicked.connect(self.closeProgram)
 
+        # Wire scroll-to-edit and double-click on slice image
+        self.imageHeart.setNavigator(self)
+
 
 '***************************************************************************************************************************************************'
 'SECOND WINDOW'
@@ -727,14 +791,103 @@ class SecondWindow(QWidget):
                          "color:white; border:none; } QPushButton:hover { background-color:rgb(18,77,150); }")
         inactiveStyle = ("QPushButton { border-radius:8px; background-color:rgb(234,234,234); "
                          "color:black; border:none; } QPushButton:hover { background-color:rgb(183,181,181); }")
+        self._btnModeDraw.setStyleSheet(inactiveStyle)
+        self._btnModeBrush.setStyleSheet(inactiveStyle)
+        self._btnModeWindow.setStyleSheet(inactiveStyle)
         if mode == 'window':
             self._btnModeWindow.setStyleSheet(activeStyle)
-            self._btnModeDraw.setStyleSheet(inactiveStyle)
             self._dragHint.show()
-        else:
-            self._btnModeDraw.setStyleSheet(activeStyle)
-            self._btnModeWindow.setStyleSheet(inactiveStyle)
+        elif mode == 'brush':
+            self._btnModeBrush.setStyleSheet(activeStyle)
             self._dragHint.hide()
+        else:  # 'draw'
+            self._btnModeDraw.setStyleSheet(activeStyle)
+            self._dragHint.hide()
+
+    # ── Contour propagation to adjacent slices ───────────────────────────────
+
+    def _propagateContour(self):
+        n, ok = QInputDialog.getInt(
+            self, "Propagate Contour",
+            "Copy contour to ±N adjacent slices\n(slight morphological adaptation per step):",
+            value=2, min=1, max=10
+        )
+        if not ok:
+            return
+
+        src_path = f'aux_img/contours/{self.patient_edit}_{int(self.slice_edit) - 1}_c.png'
+        if not os.path.exists(src_path):
+            QMessageBox.warning(self, "No contour saved",
+                                "Click Done first to save the current contour,\nthen use Propagate.")
+            return
+
+        src_bgr  = cv.imread(src_path)
+        src_gray = cv.cvtColor(src_bgr, cv.COLOR_BGR2GRAY)
+        _, src_bin = cv.threshold(src_gray, 127, 255, cv.THRESH_BINARY)
+
+        kernel = np.ones((3, 3), np.uint8)
+        count  = 0
+
+        for offset in range(-n, n + 1):
+            if offset == 0:
+                continue
+            target = int(self.slice_edit) - 1 + offset
+            if target < 0 or target >= no_slices - 1:
+                continue
+
+            iters  = abs(offset)
+            # Erode forward (smaller), dilate backward (larger) to
+            # account for the heart growing / shrinking across slices
+            morphed = (cv.erode(src_bin, kernel, iterations=iters)
+                       if offset > 0
+                       else cv.dilate(src_bin, kernel, iterations=iters))
+
+            # Save contour as 3-channel BGR (white on black) to match combineImages()
+            morphed_bgr  = cv.cvtColor(morphed, cv.COLOR_GRAY2BGR)
+            contour_path = f'aux_img/contours/{self.patient_edit}_{target}_c.png'
+            cv.imwrite(contour_path, morphed_bgr)
+
+            # Rebuild combined overlay
+            slice_path = f'aux_img/slices/{self.patient_edit}_{target}.png'
+            if os.path.exists(slice_path):
+                overlay = morphed_bgr.copy()
+                overlay[morphed > 0] = [22, 9, 224]
+                img_slice = cv.imread(slice_path)
+                if img_slice is not None:
+                    out = cv.addWeighted(overlay, 0.2, img_slice, 1, 0, img_slice)
+                    cv.imwrite(f'aux_img/combined/{self.patient_edit}_{target}_combined.png', out)
+            count += 1
+
+        QMessageBox.information(self, "Done",
+                                f"Contour propagated to {count} adjacent slice(s).")
+
+    # ── Hotkeys ──────────────────────────────────────────────────────────────
+
+    def keyPressEvent(self, event):
+        key  = event.key()
+        mods = event.modifiers()
+        if key in (Qt.Key_Return, Qt.Key_Enter):
+            self.onSubmit()
+        elif key == Qt.Key_Escape:
+            self.close()
+        elif key == Qt.Key_D:
+            self._setMode('draw')
+        elif key == Qt.Key_B:
+            self._setMode('brush')
+        elif key == Qt.Key_W:
+            self._setMode('window')
+        elif key == Qt.Key_Z and mods & Qt.ControlModifier:
+            self.eventhandler.undoLastPoint()
+        elif key == Qt.Key_1:
+            self._applyPreset(128, 256)   # Full view
+        elif key == Qt.Key_2:
+            self._applyPreset(128, 150)   # Soft Tissue
+        elif key == Qt.Key_3:
+            self._applyPreset(210,  80)   # Bone
+        elif key == Qt.Key_4:
+            self._applyPreset( 64, 180)   # Lung
+        else:
+            super().keyPressEvent(event)
 
     # ── UI setup ─────────────────────────────────────────────────────────────
 
@@ -787,13 +940,20 @@ class SecondWindow(QWidget):
         modeLbl.setFont(fnt9)
 
         self._btnModeDraw = QPushButton("✏  Draw ROI", self)
-        self._btnModeDraw.setGeometry(QRect(PX + 55, 65, 130, 30))
+        self._btnModeDraw.setGeometry(QRect(PX + 55, 65, 110, 30))
         self._btnModeDraw.setFont(fnt9)
         self._btnModeDraw.setStyleSheet(modeActiveStyle)
         self._btnModeDraw.clicked.connect(lambda: self._setMode('draw'))
 
+        # ── Smart Brush (Magnetic Lasso) ─────────────────────────────────────
+        self._btnModeBrush = QPushButton("🖌  Smart Brush", self)
+        self._btnModeBrush.setGeometry(QRect(PX + 173, 65, 125, 30))
+        self._btnModeBrush.setFont(fnt9)
+        self._btnModeBrush.setStyleSheet(modeInactiveStyle)
+        self._btnModeBrush.clicked.connect(lambda: self._setMode('brush'))
+
         self._btnModeWindow = QPushButton("🖱  Windowing", self)
-        self._btnModeWindow.setGeometry(QRect(PX + 195, 65, 138, 30))
+        self._btnModeWindow.setGeometry(QRect(PX + 306, 65, 130, 30))
         self._btnModeWindow.setFont(fnt9)
         self._btnModeWindow.setStyleSheet(modeInactiveStyle)
         self._btnModeWindow.clicked.connect(lambda: self._setMode('window'))
@@ -860,14 +1020,51 @@ class SecondWindow(QWidget):
         sep2.setStyleSheet("background-color: rgb(220,220,220);")
 
         instrLbl = QLabel(
-            "✏  Draw ROI: click on image to place points\n"
-            "     and delineate the pericardium boundary.\n\n"
-            "🖱  Windowing: click and drag on image\n"
-            "     ← →  adjusts Window Width\n"
-            "     ↑ ↓   adjusts Window Center", self)
-        instrLbl.setGeometry(QRect(PX, 368, 440, 110))
+            "✏  Draw ROI: click to place points, delineate boundary.\n"
+            "🖌  Smart Brush: click and drag freehand — auto-snaps to\n"
+            "     edges on release (Canny magnetic lasso).\n"
+            "🖱  Windowing: drag on image — ← → Width, ↑ ↓ Center.", self)
+        instrLbl.setGeometry(QRect(PX, 368, 440, 80))
         instrLbl.setFont(fntS)
         instrLbl.setStyleSheet("color: rgb(120,120,120);")
+
+        # ── Contour tools section ────────────────────────────────────────────
+        sep3 = QLabel(self)
+        sep3.setGeometry(QRect(PX, 458, 460, 2))
+        sep3.setStyleSheet("background-color: rgb(220,220,220);")
+
+        toolsTitle = QLabel("Contour Tools", self)
+        toolsTitle.setGeometry(QRect(PX, 468, 460, 22))
+        toolsTitle.setFont(fntB)
+
+        propagateBtn = QPushButton("↗  Propagate ±N slices", self)
+        propagateBtn.setGeometry(QRect(PX, 496, 200, 30))
+        propagateBtn.setFont(fnt9)
+        propagateBtn.setStyleSheet(buttonStyle)
+        propagateBtn.clicked.connect(self._propagateContour)
+
+        propagateHint = QLabel("Copies the saved contour to adjacent slices\nwith slight morphological adaptation.", self)
+        propagateHint.setGeometry(QRect(PX + 210, 496, 240, 32))
+        propagateHint.setFont(fntS)
+        propagateHint.setStyleSheet("color: rgb(120,120,120);")
+
+        # ── Hotkeys reference ────────────────────────────────────────────────
+        sep4 = QLabel(self)
+        sep4.setGeometry(QRect(PX, 540, 460, 2))
+        sep4.setStyleSheet("background-color: rgb(220,220,220);")
+
+        hotkeysTitle = QLabel("Keyboard Shortcuts", self)
+        hotkeysTitle.setGeometry(QRect(PX, 550, 460, 22))
+        hotkeysTitle.setFont(fntB)
+
+        hotkeysLbl = QLabel(
+            "D  — Draw ROI mode          B  — Smart Brush mode\n"
+            "W  — Windowing mode       1-4  — Apply preset\n"
+            "Ctrl+Z  — Undo last point    Enter  — Done\n"
+            "Esc     — Cancel", self)
+        hotkeysLbl.setGeometry(QRect(PX, 576, 460, 68))
+        hotkeysLbl.setFont(fntS)
+        hotkeysLbl.setStyleSheet("color: rgb(80,80,80);")
 
         # Connect sliders ↔ spinboxes
         self._centerSlider.valueChanged.connect(self._onCenterChanged)
@@ -933,8 +1130,9 @@ class SecondWindow(QWidget):
 
 
 class EventHandler(QLabel):
-    """Image canvas supporting two interaction modes:
+    """Image canvas supporting three interaction modes:
        'draw'   – click to place ROI contour points (default)
+       'brush'  – drag freehand; on release auto-snaps to Canny edges
        'window' – click-drag to adjust windowing (dx→Width, dy→Center)
     """
 
@@ -947,15 +1145,22 @@ class EventHandler(QLabel):
         self._drag_start  = None
         self._drag_center = 128
         self._drag_width  = 256
+        self._brushing    = False
 
     def setMode(self, mode):
         self._mode = mode
-        self.setCursor(Qt.CrossCursor if mode == 'draw' else Qt.SizeAllCursor)
+        cursors = {'draw': Qt.CrossCursor, 'brush': Qt.PointingHandCursor, 'window': Qt.SizeAllCursor}
+        self.setCursor(cursors.get(mode, Qt.CrossCursor))
 
     # ── Mouse events ────────────────────────────────────────────────────────
 
     def mousePressEvent(self, event):
         if self._mode == 'draw':
+            self.points.append(event.pos())
+            self.update()
+        elif self._mode == 'brush':
+            self._brushing = True
+            self.points    = []
             self.points.append(event.pos())
             self.update()
         else:                               # windowing mode
@@ -966,7 +1171,10 @@ class EventHandler(QLabel):
                 self._drag_width  = sw._wl_width
 
     def mouseMoveEvent(self, event):
-        if self._mode == 'window' and self._drag_start is not None:
+        if self._mode == 'brush' and self._brushing:
+            self.points.append(event.pos())
+            self.update()
+        elif self._mode == 'window' and self._drag_start is not None:
             dx = event.pos().x() - self._drag_start.x()
             dy = event.pos().y() - self._drag_start.y()
             new_center = max(0,   min(255, int(self._drag_center - dy)))
@@ -976,7 +1184,68 @@ class EventHandler(QLabel):
                 sw._applyPreset(new_center, new_width)
 
     def mouseReleaseEvent(self, event):
+        if self._mode == 'brush' and self._brushing:
+            self._brushing = False
+            self._simplifyPoints()
+            self._snapToEdges()
+            self.update()
         self._drag_start = None
+
+    # ── Smart Brush helpers ──────────────────────────────────────────────────
+
+    def _simplifyPoints(self, epsilon=3.0):
+        """Ramer-Douglas-Peucker simplification to reduce freehand point count."""
+        if len(self.points) < 3:
+            return
+        pts = np.array([[p.x(), p.y()] for p in self.points],
+                       dtype=np.float32).reshape(-1, 1, 2)
+        simplified = cv.approxPolyDP(pts, epsilon, closed=True)
+        self.points = [QtCore.QPoint(int(p[0][0]), int(p[0][1])) for p in simplified]
+
+    def _snapToEdges(self, radius=20):
+        """Magnetic-lasso: snap each point to the nearest Canny edge pixel."""
+        parent = self.parent()
+        if not hasattr(parent, '_orig') or parent._orig is None:
+            return
+
+        orig   = parent._orig           # grayscale uint8
+        img_h, img_w = orig.shape
+        w_w, w_h     = self.width(), self.height()
+
+        edges = cv.Canny(orig, 30, 100)
+        # Dilate so snapping is forgiving even if the cursor missed by a few pixels
+        kernel = np.ones((5, 5), np.uint8)
+        edges  = cv.dilate(edges, kernel)
+
+        snapped = []
+        for p in self.points:
+            # widget coords → image coords
+            ix = int(p.x() * img_w / w_w)
+            iy = int(p.y() * img_h / w_h)
+            ix = max(0, min(img_w - 1, ix))
+            iy = max(0, min(img_h - 1, iy))
+
+            x1 = max(0, ix - radius); x2 = min(img_w, ix + radius + 1)
+            y1 = max(0, iy - radius); y2 = min(img_h, iy + radius + 1)
+            region   = edges[y1:y2, x1:x2]
+            edge_yx  = np.argwhere(region > 0)
+
+            if len(edge_yx) > 0:
+                dists = np.hypot(edge_yx[:, 1] - (ix - x1),
+                                 edge_yx[:, 0] - (iy - y1))
+                best = edge_yx[np.argmin(dists)]
+                nx = int((x1 + best[1]) * w_w / img_w)
+                ny = int((y1 + best[0]) * w_h / img_h)
+                snapped.append(QtCore.QPoint(nx, ny))
+            else:
+                snapped.append(p)
+        self.points = snapped
+
+    def undoLastPoint(self):
+        """Remove the most recently placed point (works in draw and brush modes)."""
+        if self.points:
+            self.points.pop()
+            self.update()
 
     # ── Paint ───────────────────────────────────────────────────────────────
 
@@ -1056,8 +1325,9 @@ if __name__ == "__main__":
         box.exec_()
     sys.excepthook = _qt_exception_hook
 
-    MainWindow = QtWidgets.QMainWindow()
+    MainWindow = MainWindowClass()
     ui = Ui_MainWindow()
     ui.setupUi(MainWindow)
+    MainWindow.setUi(ui)
     MainWindow.show()
     sys.exit(app.exec_())
