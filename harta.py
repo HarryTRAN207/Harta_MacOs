@@ -978,9 +978,9 @@ class SecondWindow(QWidget):
         self._editHint.setStyleSheet("color:rgb(70,160,70);")
         self._editHint.hide()
 
-        QLabel(self).setGeometry(QRect(PX, 122, 460, 2)) \
-            .__setattr__('styleSheet', None) or \
-            self.findChildren(QLabel)[-1].setStyleSheet("background:rgb(220,220,220);")
+        sep0 = QLabel(self)
+        sep0.setGeometry(QRect(PX, 122, 460, 2))
+        sep0.setStyleSheet("background:rgb(220,220,220);")
 
         # ── Windowing panel ───────────────────────────────────────────────────
         wTitle = QLabel("Windowing / Gray-level Mapping", self)
@@ -1020,14 +1020,14 @@ class SecondWindow(QWidget):
         sep2.setStyleSheet("background:rgb(220,220,220);")
 
         # ── Instructions ──────────────────────────────────────────────────────
-        QLabel(
+        instrLbl = QLabel(
             "✏ Draw: click to place points\n"
             "🖌 Brush: drag freehand → auto-snaps to edges\n"
             "↖ Edit Pts: drag/right-click/segment-click to adjust\n"
-            "🖱 Window: drag on image to adjust contrast", self
-        ).setGeometry(QRect(PX, 368, 440, 68)) \
-         .setFont(fntS) or \
-        self.findChildren(QLabel)[-1].setStyleSheet("color:rgb(120,120,120);")
+            "🖱 Window: drag on image to adjust contrast", self)
+        instrLbl.setGeometry(QRect(PX, 368, 440, 68))
+        instrLbl.setFont(fntS)
+        instrLbl.setStyleSheet("color:rgb(120,120,120);")
 
         # ── Contour tools ──────────────────────────────────────────────────────
         sep3 = QLabel(self); sep3.setGeometry(QRect(PX, 446, 460, 2))

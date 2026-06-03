@@ -91,7 +91,11 @@ def segmentEpicardialFat(DICOM_DATASET = 'path/dicom_file.dcm', OUTPUT_FOLDER='a
     'Pericardium thresholding'
     pericardium_mask = np.stack([thrSegmentation(r, -44, -1) for r in heart])
     'Get pericardium contour'
-    pericardium_contour = np.stack([convex_hull_image(mask) for mask in pericardium_mask])
+    def _safe_convex_hull(mask):
+        if mask.any():
+            return convex_hull_image(mask)
+        return np.zeros_like(mask, dtype=bool)
+    pericardium_contour = np.stack([_safe_convex_hull(mask) for mask in pericardium_mask])
     pericardium_opening = np.stack([opening(mask) for mask in pericardium_contour])
 
     'Redefine ROI of heart'

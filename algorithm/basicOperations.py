@@ -5,16 +5,24 @@ from skimage.filters.thresholding import threshold_otsu
 '@param image: dtype different of np.uint8'
 '@return 3-channel BGR image'
 def convert_image_to_rgb(image, filename, output_folder):
-    # Normalize to [0, 255] — same behaviour as plt.imsave(..., cmap='gray')
-    # but avoids the matplotlib backend overhead and double disk I/O.
-    img = np.asarray(image, dtype=np.float32)
+    img = np.asarray(image)
+    path = f'{output_folder}{filename}.png'
+
+    if img.ndim == 3:
+        # Already 3-channel (e.g. combined overlay images) — save as-is
+        img_out = np.clip(img, 0, 255).astype(np.uint8)
+        cv.imwrite(path, img_out)
+        return img_out
+
+    # Grayscale / binary — normalize to [0, 255] then convert to BGR
+    img = img.astype(np.float32)
     vmin, vmax = float(img.min()), float(img.max())
     if vmax > vmin:
         img = ((img - vmin) / (vmax - vmin) * 255.0).astype(np.uint8)
     else:
         img = np.zeros(img.shape, dtype=np.uint8)
     img_bgr = cv.cvtColor(img, cv.COLOR_GRAY2BGR)
-    cv.imwrite(f'{output_folder}{filename}.png', img_bgr)
+    cv.imwrite(path, img_bgr)
     return img_bgr
 
 '@param mask: numpy.ndarray with values 0 (non-fat pixels) and 1 (fat pixels)'
