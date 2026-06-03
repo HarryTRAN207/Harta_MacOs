@@ -55,11 +55,6 @@ def segmentEpicardialFat(DICOM_DATASET = 'path/dicom_file.dcm', OUTPUT_FOLDER='a
     'Get contours redifined by user'
     new_masks = np.stack([rgb_to_binary(f'{OUTPUT_FOLDER}contours/{patient_id}_{i}_c.png') for i in range(0, no_slices)])
 
-    i = patients_hu[0]
-    m = new_masks[0]
-    nh= segmentation(i, m)
-    plt.imshow(nh)
-
     new_heart = np.stack([segmentation(i, m) for i, m in zip(patients_hu, new_masks)])
 
     ### 4. EAT SEGMENTATION
@@ -67,7 +62,8 @@ def segmentEpicardialFat(DICOM_DATASET = 'path/dicom_file.dcm', OUTPUT_FOLDER='a
     fat_masks = np.stack([thrSegmentation(r, MIN_FAT, MAX_FAT) for r in new_heart])
 
     'To show the final result of segmentation'
-    np.stack([convert_image_to_rgb(mask, f'fat/{patient_id}_{i}_fat', OUTPUT_FOLDER) for mask, i in zip(fat_masks, range(0, no_slices))])
+    for mask, i in zip(fat_masks, range(0, no_slices)):
+        convert_image_to_rgb(mask, f'fat/{patient_id}_{i}_fat', OUTPUT_FOLDER)
     'Read the slice images already save in automatic method'
     images_png = np.stack([cv.imread(f'{OUTPUT_FOLDER}slices/{patient_id}_{i}.png') for i in range(0, no_slices)])
 
@@ -75,8 +71,8 @@ def segmentEpicardialFat(DICOM_DATASET = 'path/dicom_file.dcm', OUTPUT_FOLDER='a
     combined_images = np.stack([add_images(m, img) for m, img in zip(fat_masks, images_png)])
 
     'Save image with segmentation enhanced'
-    np.stack([convert_image_to_rgb(img, f'combined/{patient_id}_{i}_combined', OUTPUT_FOLDER) for img, i in zip(combined_images, range(0,
-                                                                                                                                       no_slices))])
+    for img, i in zip(combined_images, range(0, no_slices)):
+        convert_image_to_rgb(img, f'combined/{patient_id}_{i}_combined', OUTPUT_FOLDER)
     ### 6. VOLUME CALCULATION
     vol = volume(fat_masks, thickness, px_spacing)
 
