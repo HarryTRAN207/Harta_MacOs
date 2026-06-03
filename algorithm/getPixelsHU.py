@@ -1,22 +1,16 @@
 import numpy as np
-import pylibjpeg 
+import pylibjpeg
 
 def get_pixels_hu(scans):
-    image = np.stack([s.pixel_array for s in scans])
+    # Stack pixel arrays — float32 is sufficient and ~2× faster than float64
+    image = np.stack([s.pixel_array for s in scans]).astype(np.float32)
 
-    'Convert to int16'
-    image = image.astype(np.int16)
-
-    'Set outside-of-scan pixels to 1'
-    'The intercept is usually -1024, so air is approximately 0'
+    # Replace out-of-scan sentinel (-2000) with air (0 HU after conversion)
     image[image == -2000] = 0
 
-    'Convert to Hounsfield units (HU)'
-    intercept = scans[0].RescaleIntercept
-    slope = scans[0].RescaleSlope
-    if slope != 1:
-        image = slope * image.astype(np.float64)
-        image = image.astype(np.int16)
-    image += np.int16(intercept)
+    # Apply rescale slope + intercept in one vectorised pass
+    slope     = float(scans[0].RescaleSlope)
+    intercept = float(scans[0].RescaleIntercept)
+    image = image * slope + intercept
 
-    return np.array(image, dtype=np.int16)
+    return image.astype(np.int16)
